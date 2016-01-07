@@ -1,0 +1,2 @@
+defmodule Cqrs do
+end
