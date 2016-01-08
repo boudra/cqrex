@@ -52,9 +52,7 @@ defmodule UserRepository do
   end
 
   def command(%User.Commands.Create{name: name, uuid: uuid}) do
-    user = User.new
-    user = User.dispatch(user, %User.Events.Created{name: name, uuid: uuid})
-    user
+    User.new |> User.dispatch(%User.Events.Created{name: name, uuid: uuid})
   end
 
   def create(repository, name) do
