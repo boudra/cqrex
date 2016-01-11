@@ -3,12 +3,21 @@ defmodule CqrsTest do
   doctest User
 
   test "commands" do
-    {:ok, pid} = UserCommandHandler.start_link
-    GenServer.cast(pid, { :create, %{ name: "John" } })
-    uuid = UserCommandHandler.all(pid) |> List.first |> Map.get(:uuid)
-    GenServer.cast(pid, { :change_name, %{ uuid: uuid, new_name: "Jack" } })
-    assert UserCommandHandler.find(pid, uuid).name == "Jack"
-    {:ok, pid}
+    assert (UserRepository.all |> Enum.count) == 0
+    GenServer.cast(UserCommandHandler, {
+      :create, %{ name: "John" }
+    })
+    assert (UserRepository.all |> Enum.count) == 1
+    user = UserRepository.all |> List.first
+    assert user.name == "John"
+    GenServer.cast(UserCommandHandler, {
+      :change_name, %{
+         uuid: user.uuid,
+         new_name: "Jack"
+      }
+    })
+    assert UserRepository.find(user.uuid).name == "Jack"
+    { :ok, GenServer.whereis(Main.Supervisor) }
   end
 
 end
