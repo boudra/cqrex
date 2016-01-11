@@ -31,6 +31,9 @@ defmodule Cqrs.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    [{:excoveralls, "~> 0.4", only: :test}]
+    [
+      {:excoveralls, "~> 0.4", only: :test},
+      {:exrm, "~> 1.0.0-rc7"}
+    ]
   end
 end
