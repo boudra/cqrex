@@ -24,7 +24,6 @@ defmodule MessageBus do
   end
 
   def publish(channel, message) do
-    IO.inspect message
     GenServer.cast(__MODULE__, {:publish, %{channel: channel, message: message}})
   end
 

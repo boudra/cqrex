@@ -34,7 +34,8 @@ defmodule Cqrs.Mixfile do
     [
       {:excoveralls, "~> 0.4", only: :test},
       {:exrm, "~> 1.0.0-rc7"},
-      {:ecto, "~> 1.1"}
+      {:ecto, "~> 1.1"},
+      {:exprof, "~> 0.2.0", only: :test}
     ]
   end
 end

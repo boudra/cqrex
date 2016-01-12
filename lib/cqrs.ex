@@ -41,6 +41,7 @@ defmodule Cqrs.Repository do
   defmacro __using__(options) do
 
     model = Keyword.get(options, :model, %{})
+    caller = __CALLER__.module
 
     quote do
 
@@ -50,17 +51,14 @@ defmodule Cqrs.Repository do
         {:reply, state.items, state}
 
       def handle_call({ :find_by_id, uuid }, _from, state), do:
-        {:reply, Enum.find(state.items, fn(item) -> item.uuid == uuid end), state}
+        {:reply, Enum.find(state.items, &(&1.uuid == uuid)), state}
 
       def handle_call({ :exists, uuid }, _from, state), do:
-        {:reply, Enum.any?(state.items, fn(item) -> item.uuid == uuid end), state}
+        {:reply, Enum.any?(state.items, &(&1.uuid == uuid)), state}
 
       def handle_cast({ :events, event }, state) do
-        entity = Enum.find(state.items, unquote(model),
-                         fn(item) -> item.uuid == event.payload.uuid end)
-                 |> User.handle({event.type, event.payload})
-        items = [ entity | state.items
-                |> Enum.filter(fn(item) -> item.uuid != entity.uuid end) ]
+        entity = Enum.find(state.items, unquote(model), &(&1.uuid == event.payload.uuid)) |> unquote(caller).handle({event.type, event.payload})
+        items = [ entity | state.items |> Enum.filter(&(&1.uuid != entity.uuid)) ]
         {:noreply, %State{ changes: [event | state.changes], items: items }}
       end
 
@@ -98,7 +96,8 @@ defmodule Cqrs.AggregateRoot do
       import Cqrs
       import Cqrs.AggregateRoot
       def source(model, message) do
-        MessageBus.publish(:events, make_event(message))
+        if MessageBus |> Process.whereis !== nil, do:
+          MessageBus.publish(:events, make_event(message))
         handle(model, message)
       end
     end
