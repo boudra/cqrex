@@ -7,6 +7,7 @@ defmodule Cqrs do
               payload: nil
 
   defmodule AggregateRoot do
+
     defmacro __using__(_opts) do
       quote do
         import Cqrs.AggregateRoot
@@ -16,11 +17,11 @@ defmodule Cqrs do
         end
       end
     end
+
     defmacro event(type, expr) do
       quote do
         def handle(var!(user), { unquote(:"#{type}"), var!(e) }) do
           unquote(expr)[:do]
-          end
         end
       end
     end
@@ -29,141 +30,143 @@ defmodule Cqrs do
       quote do
         def handle(var!(user), { unquote(:"#{type}"), var!(e) }) do
           unquote(expr)[:do]
-          end
         end
       end
+    end
 
-      defmodule Repository do
-        defmodule State, do: defstruct items: [], changes: []
-        defmacro __using__(options) do
+  end
 
-          model = Keyword.get(options, :model, %{})
+  defmodule Repository do
+    defmodule State, do: defstruct items: [], changes: []
+    defmacro __using__(options) do
 
-          quote do
+      model = Keyword.get(options, :model, %{})
 
-            import Cqrs.Repository
+      quote do
 
-            def handle_call({ :get_all }, _from, state), do:
-            {:reply, state.items, state}
+        import Cqrs.Repository
 
-            def handle_call({ :find_by_id, uuid }, _from, state), do:
-            {:reply, Enum.find(state.items, fn(item) -> item.uuid == uuid end), state}
+        def handle_call({ :get_all }, _from, state), do:
+          {:reply, state.items, state}
 
-            def handle_call({ :exists, uuid }, _from, state), do:
-            {:reply, Enum.any?(state.items, fn(item) -> item.uuid == uuid end), state}
+        def handle_call({ :find_by_id, uuid }, _from, state), do:
+          {:reply, Enum.find(state.items, fn(item) -> item.uuid == uuid end), state}
 
-            def handle_cast({ :apply_change, event }, state) do
-              user = Enum.find(state.items, unquote(model),
-                               fn(item) -> item.uuid == event.payload.uuid end)
-                     |> User.handle({event.type, event.payload})
-              items = [ user | state.items
-                      |> Enum.filter(fn(item) -> item.uuid != user.uuid end) ]
-              {:noreply, %State{ changes: [event | state.changes], items: items }}
-            end
+        def handle_call({ :exists, uuid }, _from, state), do:
+          {:reply, Enum.any?(state.items, fn(item) -> item.uuid == uuid end), state}
 
-            def start_link, do:
-            GenServer.start_link(__MODULE__, %State{}, name: __MODULE__)
-
-            def init(initial_state) do
-              {:ok, initial_state}
-            end
-
-            def all(), do:
-            GenServer.call(__MODULE__, { :get_all })
-
-            def find(uuid), do:
-            GenServer.call(__MODULE__, { :find_by_id, uuid })
-
-            def exists?(uuid), do:
-            GenServer.call(__MODULE__, { :exists, uuid })
-
-            def apply_event(event), do:
-            GenServer.cast(__MODULE__, { :apply_change, event })
-
-            def find_or_new(uuid) do
-              exists?(uuid) && find(uuid) || unquote(model)
-            end
-
-          end
+        def handle_cast({ :apply_change, event }, state) do
+          user = Enum.find(state.items, unquote(model),
+                           fn(item) -> item.uuid == event.payload.uuid end)
+                 |> User.handle({event.type, event.payload})
+          items = [ user | state.items
+                  |> Enum.filter(fn(item) -> item.uuid != user.uuid end) ]
+          {:noreply, %State{ changes: [event | state.changes], items: items }}
         end
+
+        def start_link, do:
+        GenServer.start_link(__MODULE__, %State{}, name: __MODULE__)
+
+        def init(initial_state) do
+          {:ok, initial_state}
+        end
+
+        def all(), do:
+        GenServer.call(__MODULE__, { :get_all })
+
+        def find(uuid), do:
+        GenServer.call(__MODULE__, { :find_by_id, uuid })
+
+        def exists?(uuid), do:
+        GenServer.call(__MODULE__, { :exists, uuid })
+
+        def apply_event(event), do:
+        GenServer.cast(__MODULE__, { :apply_change, event })
+
+        def find_or_new(uuid) do
+          exists?(uuid) && find(uuid) || unquote(model)
+        end
+
       end
-
-      def uuid, do:
-      Ecto.UUID.generate
-
-      def make_event({ type, payload}), do:
-      %Event{
-        uuid: uuid,
-        timestamp: :os.system_time(:seconds),
-        type: type,
-        payload: payload
-      }
-
     end
+  end
 
-    defmodule User do
+  def uuid, do:
+    Ecto.UUID.generate
 
-      import Cqrs
-      use Cqrs.AggregateRoot
+  def make_event({ type, payload}), do:
+    %Event{
+      uuid: uuid,
+      timestamp: :os.system_time(:seconds),
+      type: type,
+      payload: payload
+    }
 
-      defstruct uuid: nil, name: nil
+end
 
-      event :created, do: %{user | name: e.name, uuid: e.uuid}
-      event :name_changed, do: %{user | name: e.new_name}
+defmodule User do
 
-      def new, do: %User{}
+  import Cqrs
+  use Cqrs.AggregateRoot
 
-      def create(user, name), do:
-      User.apply(user, { :created, %{name: name, uuid: uuid } })
+  defstruct uuid: nil, name: nil
 
-      def change_name(user, new_name), do:
-      User.apply(user, { :name_changed, %{new_name: new_name, uuid: user.uuid } })
+  event :created, do: %{user | name: e.name, uuid: e.uuid}
+  event :name_changed, do: %{user | name: e.new_name}
 
-    end
+  def new, do: %User{}
 
-    defmodule UserRepository do
-      use Cqrs.Repository, model: User.new
-    end
+  def create(user, name), do:
+    User.apply(user, { :created, %{name: name, uuid: uuid } })
 
-    defmodule UserCommandHandler do
+  def change_name(user, new_name), do:
+    User.apply(user, { :name_changed, %{new_name: new_name, uuid: user.uuid } })
 
-      use GenServer
-      import Cqrs
+end
 
-      def handle_cast({ type, message }, state) do
-        Map.get(message, :uuid, nil)
-        |> UserRepository.find_or_new
-        |> UserCommandHandler.handle({ type, message })
-        {:noreply, state }
-      end
+defmodule UserRepository do
+  use Cqrs.Repository, model: User.new
+end
 
-      def start_link, do:
-      GenServer.start_link(__MODULE__, %{ repository: UserRepository }, name: __MODULE__)
+defmodule UserCommandHandler do
 
-      def init(initial_state), do:
-      {:ok, initial_state}
+  use GenServer
+  import Cqrs
 
-      ## Commands
+  def handle_cast({ type, message }, state) do
+    Map.get(message, :uuid, nil)
+    |> UserRepository.find_or_new
+    |> UserCommandHandler.handle({ type, message })
+    {:noreply, state }
+  end
 
-      command :create, do:
-      User.create(user, e.name)
+  def start_link, do:
+    GenServer.start_link(__MODULE__, %{ repository: UserRepository }, name: __MODULE__)
 
-      command :change_name, do:
-      User.change_name(user, e.new_name)
+  def init(initial_state), do:
+    {:ok, initial_state}
 
-    end
+  ## Commands
 
-    defmodule Main do
-      use Application
+  command :create, do:
+    User.create(user, e.name)
 
-      def start(_type, _args) do
-        import Supervisor.Spec, warn: false
-        children = [
-          worker(UserCommandHandler, []),
-          worker(UserRepository, [])
-        ]
-        opts = [strategy: :one_for_one, name: Main.Supervisor]
-        Supervisor.start_link(children, opts)
-      end
+  command :change_name, do:
+    User.change_name(user, e.new_name)
 
-    end
+end
+
+defmodule Main do
+  use Application
+
+  def start(_type, _args) do
+    import Supervisor.Spec, warn: false
+    children = [
+      worker(UserCommandHandler, []),
+      worker(UserRepository, [])
+    ]
+    opts = [strategy: :one_for_one, name: Main.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+
+end
