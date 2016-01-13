@@ -17,7 +17,7 @@ defmodule Cqrs.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger],
+    [applications: [:logger, :postgrex, :ecto],
       mod: {Main, []}]
   end
 
@@ -34,8 +34,10 @@ defmodule Cqrs.Mixfile do
     [
       {:excoveralls, "~> 0.4", only: :test},
       {:exrm, "~> 1.0.0-rc7"},
+      {:postgrex, ">= 0.0.0"},
       {:ecto, "~> 1.1"},
-      {:exprof, "~> 0.2.0", only: :test}
+      {:exprof, "~> 0.2.0", only: :test},
+      {:poison, "~> 1.5"},
     ]
   end
 end

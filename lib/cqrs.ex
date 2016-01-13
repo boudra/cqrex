@@ -1,10 +1,51 @@
 defmodule Cqrs do
 
-  defmodule Event, do:
-    defstruct uuid: nil,
-              timestamp: nil,
-              type: nil,
-              payload: nil
+  defmodule Repo do
+    use Ecto.Repo, otp_app: :cqrs
+  end
+
+  defmodule AtomType do
+    @behaviour Ecto.Type
+    def type, do: :string
+
+    # Provide our own casting rules.
+    def cast(atom) when is_atom(atom) do
+      {:ok, Atom.to_string(atom) }
+    end
+
+    # We should still accept integers
+    def cast(string) when is_binary(string), do: {:ok, string}
+
+    # Everything else is a failure though
+    def cast(_), do: :error
+
+    # When loading data from the database, we are guaranteed to
+    # receive an integer (as databases are strict) and we will
+    # just return it to be stored in the model struct.
+    def load(string) when is_binary(string), do: {:ok, string}
+
+    # When dumping data to the database, we *expect* an integer
+    # but any value could be inserted into the struct, so we need
+    # guard against them.
+    def dump(string) when is_binary(string), do: {:ok, string}
+    def dump(_), do: :error
+  end
+
+  defmodule Event do
+    use Ecto.Schema
+
+    @primary_key {:uuid, Ecto.UUID, [read_after_writes: true]}
+    schema "events" do
+      field :timestamp, :integer
+      field :type, AtomType
+      field :payload, :map
+    end
+
+    def changeset(model, _ \\ nil) do
+      %{ model | type: Atom.to_string(model.type) }
+    end
+
+  end
 
   def uuid, do:
     Ecto.UUID.generate
@@ -40,11 +81,9 @@ defmodule Cqrs.Repository do
   defmodule State, do: defstruct items: [], changes: []
   defmacro __using__(options) do
 
-    model = Keyword.get(options, :model, %{})
-    caller = __CALLER__.module
+    model_name = Keyword.get(options, :model)
 
     quote do
-
       import Cqrs.Repository
 
       def handle_call({ :get_all }, _from, state), do:
@@ -57,9 +96,18 @@ defmodule Cqrs.Repository do
         {:reply, Enum.any?(state.items, &(&1.uuid == uuid)), state}
 
       def handle_cast({ :events, event }, state) do
-        entity = Enum.find(state.items, unquote(model), &(&1.uuid == event.payload.uuid)) |> unquote(caller).handle({event.type, event.payload})
+        entity = Enum.find(state.items, struct(unquote(model_name)), &(&1.uuid == event.payload.uuid)) |> unquote(model_name).handle({event.type, event.payload})
         items = [ entity | state.items |> Enum.filter(&(&1.uuid != entity.uuid)) ]
         {:noreply, %State{ changes: [event | state.changes], items: items }}
+      end
+
+      def handle_cast({ :save_all }, state) do
+        IO.inspect state
+        IO.puts "saving.."
+        Enum.each(state.changes, fn(item) ->
+          Cqrs.Repo.insert(Cqrs.Event.changeset(item))
+        end)
+        {:noreply, %State{ changes: [], items: state.items }}
       end
 
       def start_link, do:
@@ -69,8 +117,14 @@ defmodule Cqrs.Repository do
         {:ok, initial_state}
       end
 
+      def terminate(_, _) do
+      end
+
       def all(), do:
         GenServer.call(__MODULE__, { :get_all })
+
+      def save_all(), do:
+        GenServer.cast(__MODULE__, { :save_all })
 
       def find(uuid), do:
         GenServer.call(__MODULE__, { :find_by_id, uuid })
@@ -82,7 +136,7 @@ defmodule Cqrs.Repository do
         GenServer.cast(__MODULE__, { :events, event })
 
       def find_or_new(uuid) do
-        exists?(uuid) && find(uuid) || unquote(model)
+        exists?(uuid) && find(uuid) || struct(unquote(model_name))
       end
 
     end
@@ -112,4 +166,3 @@ defmodule Cqrs.AggregateRoot do
   end
 
 end
-

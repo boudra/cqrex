@@ -5,6 +5,7 @@ defmodule Main do
     import Supervisor.Spec, warn: false
     children = [
       worker(MessageBus, []),
+      worker(Cqrs.Repo, []),
       worker(UserCommandHandler, []),
       worker(UserRepository, [])
     ]
@@ -12,6 +13,10 @@ defmodule Main do
     res = Supervisor.start_link(children, opts)
     MessageBus.subscribe(UserRepository, :events)
     MessageBus.subscribe(UserCommandHandler, :commands)
+    GenServer.cast(UserCommandHandler, { :create, %{ name: "hola" } })
+    :timer.sleep(500)
+    UserRepository.save_all
+    :timer.sleep(500)
     res
   end
 
@@ -37,7 +42,7 @@ defmodule User do
 end
 
 defmodule UserRepository do
-  use Cqrs.Repository, model: User.new
+  use Cqrs.Repository, model: User
 end
 
 defmodule UserCommandHandler do
