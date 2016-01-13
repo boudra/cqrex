@@ -8,27 +8,19 @@ defmodule Cqrs do
     @behaviour Ecto.Type
     def type, do: :string
 
-    # Provide our own casting rules.
-    def cast(atom) when is_atom(atom) do
+    def cast(atom) when is_atom(atom), do:
       {:ok, Atom.to_string(atom) }
-    end
 
-    # We should still accept integers
     def cast(string) when is_binary(string), do: {:ok, string}
-
-    # Everything else is a failure though
     def cast(_), do: :error
 
-    # When loading data from the database, we are guaranteed to
-    # receive an integer (as databases are strict) and we will
-    # just return it to be stored in the model struct.
-    def load(string) when is_binary(string), do: {:ok, string}
+    def load(string) when is_binary(string), do:
+      {:ok, String.to_existing_atom(string) }
 
-    # When dumping data to the database, we *expect* an integer
-    # but any value could be inserted into the struct, so we need
-    # guard against them.
-    def dump(string) when is_binary(string), do: {:ok, string}
-    def dump(_), do: :error
+    def load(_), do: :error
+
+    def dump(value), do: cast(value)
+
   end
 
   defmodule Event do
@@ -36,13 +28,11 @@ defmodule Cqrs do
 
     @primary_key {:uuid, Ecto.UUID, [read_after_writes: true]}
     schema "events" do
-      field :timestamp, :integer
-      field :type, AtomType
+      field :timestamp, Ecto.DateTime
+      field :aggregate_uuid, Ecto.UUID
+      field :aggregate_type, :string
+      field :type, Cqrs.AtomType
       field :payload, :map
-    end
-
-    def changeset(model, _ \\ nil) do
-      %{ model | type: Atom.to_string(model.type) }
     end
 
   end
@@ -50,13 +40,16 @@ defmodule Cqrs do
   def uuid, do:
     Ecto.UUID.generate
 
-  def make_event({ type, payload}), do:
+  def make_event(type, aggregate_type, aggregate, payload) do
     %Event{
-      uuid: uuid,
-      timestamp: :os.system_time(:seconds),
+      uuid: Cqrs.uuid,
+      aggregate_type: aggregate_type,
+      aggregate_uuid: aggregate,
+      timestamp: Ecto.DateTime.utc(:usec),
       type: type,
       payload: payload
     }
+  end
 
 end
 
@@ -96,16 +89,15 @@ defmodule Cqrs.Repository do
         {:reply, Enum.any?(state.items, &(&1.uuid == uuid)), state}
 
       def handle_cast({ :events, event }, state) do
-        entity = Enum.find(state.items, struct(unquote(model_name)), &(&1.uuid == event.payload.uuid)) |> unquote(model_name).handle({event.type, event.payload})
+        entity = Enum.find(state.items, new_model, &(&1.uuid == event.payload.uuid)) |> unquote(model_name).handle({event.type, event.payload})
         items = [ entity | state.items |> Enum.filter(&(&1.uuid != entity.uuid)) ]
         {:noreply, %State{ changes: [event | state.changes], items: items }}
       end
 
       def handle_cast({ :save_all }, state) do
-        IO.inspect state
-        IO.puts "saving.."
+        IO.puts "saving..."
         Enum.each(state.changes, fn(item) ->
-          Cqrs.Repo.insert(Cqrs.Event.changeset(item))
+          Cqrs.Repo.insert(item)
         end)
         {:noreply, %State{ changes: [], items: state.items }}
       end
@@ -135,8 +127,12 @@ defmodule Cqrs.Repository do
       def apply_event(event), do:
         GenServer.cast(__MODULE__, { :events, event })
 
+      defp new_model do
+        struct(unquote(model_name)) |> Map.put(:uuid, Cqrs.uuid)
+      end
+
       def find_or_new(uuid) do
-        exists?(uuid) && find(uuid) || struct(unquote(model_name))
+        exists?(uuid) && find(uuid) || new_model
       end
 
     end
@@ -146,13 +142,20 @@ end
 defmodule Cqrs.AggregateRoot do
 
   defmacro __using__(_opts) do
+    aggregate_name = __CALLER__.module
     quote do
       import Cqrs
       import Cqrs.AggregateRoot
-      def source(model, message) do
-        if MessageBus |> Process.whereis !== nil, do:
-          MessageBus.publish(:events, make_event(message))
-        handle(model, message)
+      def source(model, { event_type, payload }) do
+        if Process.whereis(MessageBus) !== nil, do:
+          MessageBus.publish(:events, Cqrs.make_event(
+              event_type,
+              unquote("#{aggregate_name}"),
+              model.uuid,
+              payload
+            )
+          )
+        handle(model, { event_type, payload })
       end
     end
   end

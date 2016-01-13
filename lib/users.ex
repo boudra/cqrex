@@ -28,16 +28,16 @@ defmodule User do
 
   defstruct uuid: nil, name: nil
 
-  event :created, do: %User{ self | name: e.name, uuid: e.uuid}
+  event :created, do: %User{ self | name: e.name }
   event :name_changed, do: %User{ self | name: e.new_name}
 
   def new, do: %User{}
 
   def create(user, name), do:
-    source(user, { :created, %{ name: name, uuid: uuid } })
+    source(user, { :created, %{ name: name } })
 
   def change_name(user, new_name), do:
-    source(user, { :name_changed, %{ new_name: new_name, uuid: user.uuid } })
+    source(user, { :name_changed, %{ new_name: new_name } })
 
 end
 
