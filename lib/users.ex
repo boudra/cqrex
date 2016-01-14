@@ -13,8 +13,15 @@ defmodule Main do
     res = Supervisor.start_link(children, opts)
     MessageBus.subscribe(UserRepository, :events)
     MessageBus.subscribe(UserCommandHandler, :commands)
-    GenServer.cast(UserCommandHandler, { :create, %{ name: "hola" } })
+
+    uuid = Cqrs.make_uuid
+    UserCommandHandler.create uuid, "Hola x"
+    UserCommandHandler.change_name uuid, "Hola 2"
+
+    # [ name: name ]
+
     :timer.sleep(500)
+    IO.puts UserRepository.find(uuid).name
     UserRepository.save_all
     :timer.sleep(500)
     res
@@ -26,18 +33,12 @@ defmodule User do
 
   use Cqrs.AggregateRoot
 
-  defstruct uuid: nil, name: nil
+  schema "users" do
+    field :name, :string
+  end
 
   event :created, do: %User{ self | name: e.name }
   event :name_changed, do: %User{ self | name: e.new_name}
-
-  def new, do: %User{}
-
-  def create(user, name), do:
-    source(user, { :created, %{ name: name } })
-
-  def change_name(user, new_name), do:
-    source(user, { :name_changed, %{ new_name: new_name } })
 
 end
 
@@ -47,28 +48,18 @@ end
 
 defmodule UserCommandHandler do
 
+  @repo UserRepository
   use Cqrs.CommandHandler
   require User
 
-  def handle_cast({ type, message }, state) do
-    Map.get(message, :uuid, nil)
-    |> UserRepository.find_or_new
-    |> UserCommandHandler.handle({ type, message })
-    {:noreply, state }
-  end
-
-  def start_link, do:
-    GenServer.start_link(__MODULE__, %{ repository: UserRepository }, name: __MODULE__)
-
-  def init(initial_state), do:
-    {:ok, initial_state}
-
   ## Commands
 
-  command :create, do:
-    User.create(self, e.name)
+  command :create, [ name: name ] do
+    publish self, :created, %{name: name}
+  end
 
-  command :change_name, do:
-    User.change_name(self, e.new_name)
+  command :change_name, [ new_name: name ] do
+    publish self, :name_changed, %{new_name: name}
+  end
 
 end
