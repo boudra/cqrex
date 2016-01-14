@@ -68,6 +68,7 @@ defmodule Cqrs.CommandHandler do
 
       def unquote(type)(unquote_splicing(real_args)) do
         unquote(__CALLER__.module).send(unquote(:"#{type}"), unquote({:uuid, [], nil}), %{ unquote_splicing(args) })
+        unquote({:uuid, [], nil})
       end
 
     end
@@ -119,6 +120,7 @@ defmodule Cqrs.Repository do
 
     quote do
       import Cqrs.Repository
+      import Ecto.Query, only: [from: 2]
 
       def handle_call({ :get_all }, _from, state), do:
         {:reply, state.items, state}
@@ -129,6 +131,26 @@ defmodule Cqrs.Repository do
 
       def handle_call({ :exists, uuid }, _from, state) do
         {:reply, Enum.any?(state.items, &(&1.uuid == uuid)), state}
+      end
+
+      def handle_call({:find_at, uuid, time}, _from ,state) do
+
+        "Elixir." <> name = "#{unquote(model_name)}"
+        name = Macro.underscore(name)
+
+        query = from e in Cqrs.Event,
+          where: e.aggregate_type == ^name,
+          where: e.aggregate_uuid == ^uuid,
+          where: e.timestamp < ^time,
+          order_by: e.timestamp,
+          select: e
+
+        events = Cqrs.Repo.all(query)
+
+        model = Enum.reduce(events, new_model(uuid),
+          &(unquote(model_name).handle(&2,{&1.type, &1.payload})))
+
+        {:reply, model, state}
       end
 
       def handle_cast({ :events, event }, state) do
@@ -164,6 +186,9 @@ defmodule Cqrs.Repository do
 
       def find(uuid), do:
         GenServer.call(__MODULE__, { :find_by_id, uuid })
+
+      def find_at(uuid, time), do:
+        GenServer.call(__MODULE__, { :find_at, uuid, time })
 
       def exists?(uuid), do:
         GenServer.call(__MODULE__, { :exists, uuid })
