@@ -14,24 +14,23 @@ defmodule Main do
     MessageBus.subscribe(UserRepository, :events)
     MessageBus.subscribe(UserCommandHandler, :commands)
 
-    uuid = Cqrs.make_uuid
-
-    uuid
-    |> UserCommandHandler.create("Hola x")
-    |> UserCommandHandler.change_name("Hola 5")
+    user = UserRepository.new_model
+           |> UserCommandHandler.create("Hola x")
+           |> UserCommandHandler.change_name("Hola 5")
 
     :timer.sleep(50)
     time = Ecto.DateTime.utc(:usec)
 
-    uuid
+    user
     |> UserCommandHandler.change_name("Hola 6")
     |> UserCommandHandler.change_name("Hola 8")
 
     :timer.sleep(500)
-    IO.puts UserRepository.find(uuid).name
+    IO.inspect UserRepository.all
+    IO.puts UserRepository.find(user.uuid).name
     UserRepository.save_all
     :timer.sleep(600)
-    IO.puts UserRepository.find_at(uuid, time).name
+    IO.puts UserRepository.find_at(user.uuid, time).name
     :timer.sleep(500)
     res
   end
@@ -46,8 +45,9 @@ defmodule User do
     field :name, :string
   end
 
-  event :created,
-    do: %User{ self | name: e["name"] }
+  event :created do
+    %User{ self | name: e["name"] }
+  end
 
   event :name_changed,
     do: %User{ self | name: e["new_name"] }

@@ -55,7 +55,7 @@ end
 
 defmodule Cqrs.CommandHandler do
   defmacro command(type, args \\ nil, expr) do
-    real_args = [ :uuid | args |> Enum.map(fn(arg) ->
+    real_args = [ :self | args |> Enum.map(fn(arg) ->
       {_,{x,_,_}} = arg
       x
     end)] |> Enum.map(&({ &1, [], nil }))
@@ -67,8 +67,8 @@ defmodule Cqrs.CommandHandler do
       end
 
       def unquote(type)(unquote_splicing(real_args)) do
-        unquote(__CALLER__.module).send(unquote(:"#{type}"), unquote({:uuid, [], nil}), %{ unquote_splicing(args) })
-        unquote({:uuid, [], nil})
+        unquote(__CALLER__.module).send(unquote(:"#{type}"), unquote({:self, [], nil}), %{ unquote_splicing(args) })
+        unquote({:self, [], nil})
       end
 
     end
@@ -95,6 +95,10 @@ defmodule Cqrs.CommandHandler do
       def init(initial_state), do:
         {:ok, initial_state}
 
+      def send(type, aggregate, payload) when(is_map(aggregate)) do
+        GenServer.cast(__MODULE__, { type, aggregate.uuid, payload })
+      end
+
       def send(type, aggregate, payload) do
         GenServer.cast(__MODULE__, { type, aggregate, payload })
       end
@@ -107,6 +111,7 @@ defmodule Cqrs.CommandHandler do
           model.uuid,
           payload
         ))
+        model.__struct__.handle(model, {event_type, payload})
       end
     end
   end
@@ -196,10 +201,9 @@ defmodule Cqrs.Repository do
       def apply_event(event), do:
         GenServer.cast(__MODULE__, { :events, event })
 
-      defp new_model(uuid) when is_nil(uuid), do: new_model(Cqrs.make_uuid)
-
-      defp new_model(uuid) do
-        struct(unquote(model_name)) |> Map.put(:uuid, uuid)
+      def new_model(uuid \\ nil) do
+        struct(unquote(model_name))
+        |> Map.put(:uuid, (is_nil(uuid) && Cqrs.make_uuid || uuid))
       end
 
       def find_or_new(uuid) do
