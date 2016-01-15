@@ -167,8 +167,16 @@ defmodule Cqrs.Repository do
       def handle_cast({ :save_all }, state) do
         IO.puts "saving..."
         IO.inspect state.items
+        uuids = Enum.map(state.changes, &(&1.aggregate_uuid)) |> Enum.uniq
         Enum.each(state.changes, fn(item) ->
           Cqrs.Repo.insert(item)
+        end)
+        Enum.each(uuids, fn(uuid) ->
+          Cqrs.Repo.insert_or_update(Enum.find(
+            state.items,
+            nil,
+            &(&1.uuid == uuid)) |> Ecto.Changeset.change
+          )
         end)
         {:noreply, %State{ changes: [], items: state.items }}
       end

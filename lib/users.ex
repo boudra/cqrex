@@ -33,6 +33,7 @@ defmodule Main do
     IO.puts UserRepository.find_at(user.uuid, time).name
     :timer.sleep(500)
     res
+
   end
 
 end
@@ -49,8 +50,9 @@ defmodule User do
     %User{ self | name: e["name"] }
   end
 
-  event :name_changed,
-    do: %User{ self | name: e["new_name"] }
+  event :name_changed do
+    %User{ self | name: e["new_name"] }
+  end
 
 end
 
