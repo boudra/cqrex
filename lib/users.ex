@@ -27,8 +27,12 @@ defmodule Main do
 
     :timer.sleep(500)
     IO.inspect UserRepository.all
-    IO.puts UserRepository.find(user.uuid).name
     UserRepository.save_all
+    :timer.sleep(50)
+    IO.puts UserRepository.find(user.uuid).name
+    UserCommandHandler.change_name(user, "Hola 9")
+    :timer.sleep(50)
+    UserRepository.save user
     :timer.sleep(600)
     IO.puts UserRepository.find_at(user.uuid, time).name
     :timer.sleep(500)

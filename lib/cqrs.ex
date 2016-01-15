@@ -113,6 +113,7 @@ defmodule Cqrs.CommandHandler do
         ))
         model.__struct__.handle(model, {event_type, payload})
       end
+
     end
   end
 end
@@ -126,16 +127,17 @@ defmodule Cqrs.Repository do
     quote do
       import Cqrs.Repository
       import Ecto.Query, only: [from: 2]
+      require Ecto.Changeset
 
       def handle_call({ :get_all }, _from, state), do:
         {:reply, state.items, state}
 
       def handle_call({ :find_by_id, uuid }, _from, state) do
-        {:reply, Enum.find(state.items, &(&1.uuid == uuid)), state}
+        {:reply, Cqrs.Repo.get(unquote(model_name), uuid), state}
       end
 
       def handle_call({ :exists, uuid }, _from, state) do
-        {:reply, Enum.any?(state.items, &(&1.uuid == uuid)), state}
+        {:reply, !!Cqrs.Repo.get(unquote(model_name), uuid), state}
       end
 
       def handle_call({:find_at, uuid, time}, _from ,state) do
@@ -158,27 +160,56 @@ defmodule Cqrs.Repository do
         {:reply, model, state}
       end
 
+      defp change(changes, uuid, new_changes) do
+        changeset = Enum.find(
+          changes,
+          Ecto.Changeset.change(struct(unquote(model_name))),
+          &(&1.model.uuid == uuid)
+        )
+        changeset = Ecto.Changeset.change(changeset, Map.from_struct(new_changes))
+        %Ecto.Changeset{ changeset | model: new_changes }
+      end
+
       def handle_cast({ :events, event }, state) do
-        entity = Enum.find(state.items, new_model(event.aggregate_uuid), &(&1.uuid == event.aggregate_uuid)) |> unquote(model_name).handle({event.type, event.payload})
-        items = [ entity | state.items |> Enum.filter(&(&1.uuid != entity.uuid)) ]
+
+        entity = case Cqrs.Repo.get(unquote(model_name), event.aggregate_uuid) do
+          nil -> new_model(event.aggregate_uuid)
+          model -> model
+        end
+
+        new_model = unquote(model_name).handle(entity, {event.type, event.payload})
+        changeset = change(state.items, event.aggregate_uuid, new_model)
+        items = [ changeset | state.items |> Enum.filter(&(&1.model.uuid != changeset.model.uuid)) ]
+
         {:noreply, %State{ changes: [event | state.changes], items: items }}
       end
 
       def handle_cast({ :save_all }, state) do
         IO.puts "saving..."
-        IO.inspect state.items
         uuids = Enum.map(state.changes, &(&1.aggregate_uuid)) |> Enum.uniq
         Enum.each(state.changes, fn(item) ->
           Cqrs.Repo.insert(item)
         end)
-        Enum.each(uuids, fn(uuid) ->
-          Cqrs.Repo.insert_or_update(Enum.find(
-            state.items,
-            nil,
-            &(&1.uuid == uuid)) |> Ecto.Changeset.change
-          )
+        Enum.map(uuids, fn(uuid) ->
+          Cqrs.Repo.insert_or_update!(Enum.find(
+          state.items,
+          nil,
+          &(&1.model.uuid == uuid)))
         end)
-        {:noreply, %State{ changes: [], items: state.items }}
+        items = state.items |> Enum.reject(&(Enum.member?(uuids, &1.model.uuid)))
+        {:noreply, %State{ changes: [], items: items }}
+      end
+
+      def handle_cast({ :save, model }, state) do
+        changes = state.changes |> Enum.filter(&(&1.aggregate_uuid == model.uuid))
+        rest_changes = state.changes |> Enum.reject(&(&1.aggregate_uuid == model.uuid))
+        Enum.each(changes, &(Cqrs.Repo.insert(&1)))
+        Cqrs.Repo.insert_or_update!(Enum.find(
+          state.items,
+          nil,
+          &(&1.model.uuid == model.uuid)))
+        items = state.items |> Enum.filter(&(&1.model.uuid != model.uuid))
+        { :noreply, %State{ changes: rest_changes, items: items } }
       end
 
       def start_link, do:
@@ -196,6 +227,9 @@ defmodule Cqrs.Repository do
 
       def save_all(), do:
         GenServer.cast(__MODULE__, { :save_all })
+
+      def save(model), do:
+        GenServer.cast(__MODULE__, { :save, model })
 
       def find(uuid), do:
         GenServer.call(__MODULE__, { :find_by_id, uuid })
