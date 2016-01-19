@@ -5,6 +5,7 @@ defmodule Cqrs do
   end
 
   defmodule AtomType do
+
     @behaviour Ecto.Type
     def type, do: :string
 

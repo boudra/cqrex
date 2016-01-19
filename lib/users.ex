@@ -7,13 +7,17 @@ defmodule Main do
       worker(MessageBus, []),
       worker(Cqrs.Repo, []),
       worker(UserCommandHandler, []),
-      worker(UserRepository, [])
+      worker(UserWriteRepository, []),
+      worker(UserReadRepository, [])
     ]
     opts = [strategy: :one_for_one, name: Main.Supervisor]
     res = Supervisor.start_link(children, opts)
-    MessageBus.subscribe(UserRepository, :events)
-    MessageBus.subscribe(UserCommandHandler, :commands)
-    user = UserRepository.new_model
+
+    MessageBus.subscribe(UserWriteRepository, :events)
+    MessageBus.subscribe(UserReadRepository,  :events)
+    MessageBus.subscribe(UserCommandHandler,  :commands)
+
+    user = UserWriteRepository.new_model
            |> UserCommandHandler.create("Hola x")
            |> UserCommandHandler.change_name("Hola 5")
 
@@ -25,16 +29,17 @@ defmodule Main do
     |> UserCommandHandler.change_name("Hola 8")
 
     :timer.sleep(500)
-    IO.inspect UserRepository.all
-    UserRepository.save_all
+    IO.inspect UserWriteRepository.all
+    UserWriteRepository.save_all
     :timer.sleep(50)
-    IO.puts UserRepository.find(user.uuid).name
+    IO.puts UserWriteRepository.find(user.uuid).name
     UserCommandHandler.change_name(user, "Hola 9")
     :timer.sleep(50)
-    UserRepository.save user
+    UserWriteRepository.save user
+    IO.puts "HOLA"
     IO.inspect UserQueryHandler.find user.uuid
     :timer.sleep(600)
-    IO.puts UserRepository.find_at(user.uuid, time).name
+    IO.puts UserReadRepository.find_at(user.uuid, time).name
     :timer.sleep(500)
 
     IO.inspect UserCommandHandler.get_commands
@@ -45,7 +50,11 @@ defmodule Main do
 
 end
 
-defmodule UserRepository do
+defmodule UserWriteRepository do
+  use Cqrs.Repository, model: User
+end
+
+defmodule UserReadRepository do
   use Cqrs.Repository, model: User
 end
 
@@ -69,26 +78,28 @@ end
 
 defmodule UserCommandHandler do
 
-  @repo UserRepository
+  @repo UserWriteRepository
   use Cqrs.CommandHandler
 
   # Commands
 
   command create(name: name) do
-    IO.inspect @commands
-    publish self, :created, %{ "name" => name }
+    publish self, :created, %{
+      "name" => name
+    }
   end
 
   command change_name(new_name: name) do
-    IO.inspect @commands
-    publish self, :name_changed, %{ "new_name" => name }
+    publish self, :name_changed, %{
+      "new_name" => name
+    }
   end
 
 end
 
 defmodule UserQueryHandler do
 
-  @repo UserRepository
+  @repo UserReadRepository
   use Cqrs.QueryHandler
 
   # Queries
