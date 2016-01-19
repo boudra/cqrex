@@ -53,27 +53,60 @@ defmodule Cqrs do
 
 end
 
+defmodule Cqrs.MessageHandler do
+
+
+end
+
+defmodule Cqrs.QueryHandler do
+  import Cqrs.MessageHandler
+  defmacro query({name, _, args}, expr) do
+    quote do
+      def handle({unquote(name), unquote_splicing(args) }), unquote(expr)
+      def unquote(name)(unquote_splicing(args)), unquote(expr)
+    end
+  end
+  defmacro __using__(_opts) do
+    quote do
+      import Cqrs
+      import Cqrs.QueryHandler
+    end
+  end
+end
+
 defmodule Cqrs.CommandHandler do
-  defmacro command(type, args \\ nil, expr) do
-    real_args = [ :self | args |> Enum.map(fn(arg) ->
-      {_,{x,_,_}} = arg
+
+  import Cqrs.MessageHandler
+  defmacro command({type, _, named_args},  expr) when is_atom(type) and is_list(named_args) do
+
+    real_args = [ :self | named_args |> Enum.map(fn(arg) ->
+      {_, {x,_,_} } = (arg |> List.first)
       x
     end)] |> Enum.map(&({ &1, [], nil }))
+    command_map = {:%{}, [], named_args |> Enum.map(&List.first/1)}
+
+    Module.put_attribute(__CALLER__.module, :commands, [
+      type | Module.get_attribute(__CALLER__.module, :commands)
+    ])
 
     quote do
 
-      def handle(var!(self), unquote(:"#{type}"), %{ unquote_splicing(args) }) do
-        unquote(expr)[:do]
-      end
+      def handle(var!(self), unquote(type), unquote(command_map)), unquote(expr)
 
       def unquote(type)(unquote_splicing(real_args)) do
-        unquote(__CALLER__.module).send(unquote(:"#{type}"), unquote({:self, [], nil}), %{ unquote_splicing(args) })
+        unquote(__CALLER__.module).send(
+          unquote(:"#{type}"),
+          unquote({:self, [], nil}),
+          unquote(command_map)
+        )
         unquote({:self, [], nil})
       end
 
     end
   end
+
   defmacro __using__(_opts) do
+    Module.put_attribute(__CALLER__.module, :commands, [])
     quote do
       import Cqrs
       import Cqrs.CommandHandler
@@ -112,6 +145,10 @@ defmodule Cqrs.CommandHandler do
           payload
         ))
         model.__struct__.handle(model, {event_type, payload})
+      end
+
+      def get_commands() do
+        @commands
       end
 
     end

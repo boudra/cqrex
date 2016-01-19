@@ -13,7 +13,6 @@ defmodule Main do
     res = Supervisor.start_link(children, opts)
     MessageBus.subscribe(UserRepository, :events)
     MessageBus.subscribe(UserCommandHandler, :commands)
-
     user = UserRepository.new_model
            |> UserCommandHandler.create("Hola x")
            |> UserCommandHandler.change_name("Hola 5")
@@ -33,13 +32,21 @@ defmodule Main do
     UserCommandHandler.change_name(user, "Hola 9")
     :timer.sleep(50)
     UserRepository.save user
+    IO.inspect UserQueryHandler.find user.uuid
     :timer.sleep(600)
     IO.puts UserRepository.find_at(user.uuid, time).name
     :timer.sleep(500)
+
+    IO.inspect UserCommandHandler.get_commands
+
     res
 
   end
 
+end
+
+defmodule UserRepository do
+  use Cqrs.Repository, model: User
 end
 
 defmodule User do
@@ -60,10 +67,6 @@ defmodule User do
 
 end
 
-defmodule UserRepository do
-  use Cqrs.Repository, model: User
-end
-
 defmodule UserCommandHandler do
 
   @repo UserRepository
@@ -71,12 +74,31 @@ defmodule UserCommandHandler do
 
   # Commands
 
-  command :create, [ name: name ] do
-    publish self, :created, %{ "name" => name}
+  command create(name: name) do
+    IO.inspect @commands
+    publish self, :created, %{ "name" => name }
   end
 
-  command :change_name, [ new_name: name ] do
-    publish self, :name_changed, %{ "new_name" => name}
+  command change_name(new_name: name) do
+    IO.inspect @commands
+    publish self, :name_changed, %{ "new_name" => name }
+  end
+
+end
+
+defmodule UserQueryHandler do
+
+  @repo UserRepository
+  use Cqrs.QueryHandler
+
+  # Queries
+
+  query find(uuid) do
+    @repo.find uuid
+  end
+
+  query all() do
+    @repo.all
   end
 
 end

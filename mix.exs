@@ -35,6 +35,7 @@ defmodule Cqrs.Mixfile do
       {:excoveralls, "~> 0.4", only: :test},
       {:exrm, "~> 1.0.0-rc7"},
       {:postgrex, ">= 0.0.0"},
+      {:sqlite_ecto, "~> 1.0.0"},
       {:ecto, "~> 1.1"},
       {:exprof, "~> 0.2.0", only: :test},
       {:poison, "~> 1.5"},

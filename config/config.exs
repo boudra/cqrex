@@ -2,12 +2,16 @@
 # and its dependencies with the aid of the Mix.Config module.
 use Mix.Config
 
-config :cqrs, Cqrs.Repo,
+config :cqrs, Cqrs.PostgresRepo,
   adapter: Ecto.Adapters.Postgres,
   database: "postgres",
   username: "postgres",
   password: "postgres",
   hostname: "192.168.99.100"
+
+config :cqrs, Cqrs.Repo,
+  adapter: Sqlite.Ecto,
+  database: "db.sqlite3"
 
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this
