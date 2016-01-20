@@ -139,7 +139,7 @@ defmodule Cqrs.CommandHandler do
 
       def publish(model, event_type, payload) do
         "Elixir." <> name = "#{model.__struct__}"
-        MessageBus.publish(:events, Cqrs.make_event(
+        MessageBus.publish(:changes, Cqrs.make_event(
           event_type,
           Macro.underscore(name),
           model.uuid,
@@ -208,40 +208,45 @@ defmodule Cqrs.Repository do
         %Ecto.Changeset{ changeset | model: new_changes }
       end
 
-      def handle_cast({ :events, event }, state) do
-
+      defp apply_event(items, event) do
         entity = case Cqrs.Repo.get(unquote(model_name), event.aggregate_uuid) do
           nil -> new_model(event.aggregate_uuid)
           model -> model
         end
-
         new_model = unquote(model_name).handle(entity, {event.type, event.payload})
-        changeset = change(state.items, event.aggregate_uuid, new_model)
-        items = [ changeset | state.items |> Enum.filter(&(&1.model.uuid != changeset.model.uuid)) ]
+        changeset = change(items, event.aggregate_uuid, new_model)
+        [ changeset | items |> Enum.filter(&(&1.model.uuid != changeset.model.uuid)) ]
+      end
 
-        {:noreply, %State{ changes: [event | state.changes], items: items }}
+      def handle_cast({ :events, event }, state) do
+        {:noreply, %State{ state | items: apply_event(state.items, event) }}
+      end
+
+      def handle_cast({ :changes, event }, state) do
+        {
+          :noreply, %State{
+            changes: [event | state.changes],
+            items: apply_event(state.items, event)
+          }
+        }
       end
 
       def handle_cast({ :save_all }, state) do
         IO.puts "saving..."
-        uuids = Enum.map(state.changes, &(&1.aggregate_uuid)) |> Enum.uniq
-        Enum.each(state.changes, fn(item) ->
-          Cqrs.Repo.insert(item)
+        state = Enum.reduce(state.items, state, fn(item, state) ->
+          { :noreply, state } = handle_cast({ :save, item.model }, state)
+          state
         end)
-        Enum.map(uuids, fn(uuid) ->
-          Cqrs.Repo.insert_or_update!(Enum.find(
-          state.items,
-          nil,
-          &(&1.model.uuid == uuid)))
-        end)
-        items = state.items |> Enum.reject(&(Enum.member?(uuids, &1.model.uuid)))
-        {:noreply, %State{ changes: [], items: items }}
+        { :noreply, state }
       end
 
       def handle_cast({ :save, model }, state) do
         changes = state.changes |> Enum.filter(&(&1.aggregate_uuid == model.uuid))
         rest_changes = state.changes |> Enum.reject(&(&1.aggregate_uuid == model.uuid))
-        Enum.each(changes, &(Cqrs.Repo.insert(&1)))
+        Enum.each(changes, fn(change) ->
+          MessageBus.publish :events, change
+          Cqrs.Repo.insert(change)
+        end)
         Cqrs.Repo.insert_or_update!(Enum.find(
           state.items,
           nil,

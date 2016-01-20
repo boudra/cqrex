@@ -2,7 +2,9 @@ defmodule Main do
   use Application
 
   def start(_type, _args) do
+
     import Supervisor.Spec, warn: false
+
     children = [
       worker(MessageBus, []),
       worker(Cqrs.Repo, []),
@@ -10,10 +12,11 @@ defmodule Main do
       worker(UserWriteRepository, []),
       worker(UserReadRepository, [])
     ]
+
     opts = [strategy: :one_for_one, name: Main.Supervisor]
     res = Supervisor.start_link(children, opts)
 
-    MessageBus.subscribe(UserWriteRepository, :events)
+    MessageBus.subscribe(UserWriteRepository, [ :events, :changes ])
     MessageBus.subscribe(UserReadRepository,  :events)
     MessageBus.subscribe(UserCommandHandler,  :commands)
 
@@ -37,6 +40,7 @@ defmodule Main do
     :timer.sleep(50)
     UserWriteRepository.save user
     IO.puts "HOLA"
+    :timer.sleep(50)
     IO.inspect UserQueryHandler.find user.uuid
     :timer.sleep(600)
     IO.puts UserReadRepository.find_at(user.uuid, time).name
