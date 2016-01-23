@@ -115,7 +115,7 @@ defmodule Cqrs.CommandHandler do
 
       def handle_cast({ type, aggregate, message }, state) do
         aggregate
-        |> state.__repository__.find_or_new
+        |> state.__repository__.find_or_create
         |> handle(type, message)
         {:noreply, state }
       end
@@ -157,7 +157,7 @@ defmodule Cqrs.CommandHandler do
 end
 
 defmodule Cqrs.Repository do
-  defmodule State, do: defstruct items: [], changes: []
+  defmodule State, do: defstruct items: [], changes: [], cache: nil
   defmacro __using__(options) do
 
     model_name = Keyword.get(options, :model)
@@ -170,12 +170,17 @@ defmodule Cqrs.Repository do
       def handle_call({ :get_all }, _from, state), do:
         {:reply, state.items, state}
 
-      def handle_call({ :find_by_id, uuid }, _from, state) do
-        {:reply, Cqrs.Repo.get(unquote(model_name), uuid), state}
+      def handle_call({ :find, uuid }, _from, state) do
+        {:reply, get(state.items, uuid), state}
+      end
+
+      def handle_call({ :find_or_create, uuid }, _from, state) do
+        { items, model } = get_or_create(state.cache, state.items, uuid)
+        {:reply, model, %State{ state | items: items }}
       end
 
       def handle_call({ :exists, uuid }, _from, state) do
-        {:reply, !!Cqrs.Repo.get(unquote(model_name), uuid), state}
+        {:reply, !!get(state.items, uuid), state}
       end
 
       def handle_call({:find_at, uuid, time}, _from ,state) do
@@ -208,25 +213,51 @@ defmodule Cqrs.Repository do
         %Ecto.Changeset{ changeset | model: new_changes }
       end
 
-      defp apply_event(items, event) do
-        entity = case Cqrs.Repo.get(unquote(model_name), event.aggregate_uuid) do
+      defp get_or_create(cache, items, uuid) do
+        # IO.inspect items
+        case :ets.lookup(cache, uuid) do
+           [] -> db_model = case Cqrs.Repo.get(unquote(model_name), uuid) do
+                nil -> new_model(uuid)
+                model -> model
+            end
+            changeset = change(items, uuid, db_model)
+            { [ changeset | items ], db_model }
+           [ { _, model } ] -> { items, model }
+        end
+      end
+
+      defp get(cache, uuid) do
+        # IO.inspect items
+        case :ets.lookup(cache, uuid) do
+          [] -> case Cqrs.Repo.get(unquote(model_name), uuid) do
+              nil -> nil
+              model -> model
+          end
+          [ { _, model } ]-> model
+        end
+      end
+
+      defp apply_event(%State{ cache: cache, items: items }, event) do
+        new_model = case get(cache, event.aggregate_uuid) do
           nil -> new_model(event.aggregate_uuid)
           model -> model
-        end
-        new_model = unquote(model_name).handle(entity, {event.type, event.payload})
+        end |> unquote(model_name).handle({event.type, event.payload})
         changeset = change(items, event.aggregate_uuid, new_model)
+        :ets.insert(cache, { event.aggregate_uuid, new_model })
         [ changeset | items |> Enum.filter(&(&1.model.uuid != changeset.model.uuid)) ]
       end
 
       def handle_cast({ :events, event }, state) do
-        {:noreply, %State{ state | items: apply_event(state.items, event) }}
+        IO.puts __MODULE__
+        IO.puts "Received event!"
+        {:noreply, %State{ state | items: apply_event(state, event) }}
       end
 
       def handle_cast({ :changes, event }, state) do
         {
-          :noreply, %State{
+          :noreply, %State{ state |
             changes: [event | state.changes],
-            items: apply_event(state.items, event)
+            items: apply_event(state, event)
           }
         }
       end
@@ -237,29 +268,33 @@ defmodule Cqrs.Repository do
           { :noreply, state } = handle_cast({ :save, item.model }, state)
           state
         end)
+        IO.puts "saved"
         { :noreply, state }
       end
 
       def handle_cast({ :save, model }, state) do
+        IO.puts "hel"
+        IO.inspect state.cache
         changes = state.changes |> Enum.filter(&(&1.aggregate_uuid == model.uuid))
         rest_changes = state.changes |> Enum.reject(&(&1.aggregate_uuid == model.uuid))
         Enum.each(changes, fn(change) ->
           MessageBus.publish :events, change
-          Cqrs.Repo.insert(change)
+          Cqrs.Repo.insert!(change)
         end)
         Cqrs.Repo.insert_or_update!(Enum.find(
           state.items,
           nil,
           &(&1.model.uuid == model.uuid)))
         items = state.items |> Enum.filter(&(&1.model.uuid != model.uuid))
-        { :noreply, %State{ changes: rest_changes, items: items } }
+        { :noreply, %State{ state | changes: rest_changes, items: items } }
       end
 
       def start_link, do:
-        GenServer.start_link(__MODULE__, %State{}, name: __MODULE__)
+        GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-      def init(initial_state) do
-        {:ok, initial_state}
+      def init(_args) do
+        IO.puts "hola"
+        { :ok, IO.inspect %State{ cache: :ets.new(__MODULE__, [:set]) }}
       end
 
       def terminate(_, _) do
@@ -275,7 +310,10 @@ defmodule Cqrs.Repository do
         GenServer.cast(__MODULE__, { :save, model })
 
       def find(uuid), do:
-        GenServer.call(__MODULE__, { :find_by_id, uuid })
+        GenServer.call(__MODULE__, { :find, uuid })
+
+      def find_or_create(uuid), do:
+        GenServer.call(__MODULE__, { :find_or_create, uuid })
 
       def find_at(uuid, time), do:
         GenServer.call(__MODULE__, { :find_at, uuid, time })
@@ -283,16 +321,9 @@ defmodule Cqrs.Repository do
       def exists?(uuid), do:
         GenServer.call(__MODULE__, { :exists, uuid })
 
-      def apply_event(event), do:
-        GenServer.cast(__MODULE__, { :events, event })
-
       def new_model(uuid \\ nil) do
         struct(unquote(model_name))
         |> Map.put(:uuid, (is_nil(uuid) && Cqrs.make_uuid || uuid))
-      end
-
-      def find_or_new(uuid) do
-        exists?(uuid) && find(uuid) || new_model(uuid)
       end
 
     end

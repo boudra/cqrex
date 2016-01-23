@@ -5,7 +5,6 @@ defmodule Cqrs.Mixfile do
     [app: :cqrs,
      version: "0.0.1",
      elixir: "~> 1.2",
-     elixirc_paths: ["./example", "./lib"],
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps,

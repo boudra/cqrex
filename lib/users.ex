@@ -4,6 +4,7 @@ defmodule Main do
   def start(_type, _args) do
 
     import Supervisor.Spec, warn: false
+    IO.inspect self
 
     children = [
       worker(MessageBus, []),
@@ -21,30 +22,36 @@ defmodule Main do
     MessageBus.subscribe(UserCommandHandler,  :commands)
 
     user = UserWriteRepository.new_model
-           |> UserCommandHandler.create("Hola x")
-           |> UserCommandHandler.change_name("Hola 5")
+    |> UserCommandHandler.create("Hola x")
+    |> UserCommandHandler.change_name("Hola 5")
 
-    :timer.sleep(50)
-    time = Ecto.DateTime.utc(:usec)
-
+    :timer.sleep(900)
     user
     |> UserCommandHandler.change_name("Hola 6")
-    |> UserCommandHandler.change_name("Hola 8")
+    |> UserWriteRepository.save
+    :timer.sleep(1000)
 
-    :timer.sleep(500)
-    IO.inspect UserWriteRepository.all
-    UserWriteRepository.save_all
-    :timer.sleep(50)
-    IO.puts UserWriteRepository.find(user.uuid).name
-    UserCommandHandler.change_name(user, "Hola 9")
-    :timer.sleep(50)
-    UserWriteRepository.save user
-    IO.puts "HOLA"
-    :timer.sleep(50)
-    IO.inspect UserQueryHandler.find user.uuid
-    :timer.sleep(600)
-    IO.puts UserReadRepository.find_at(user.uuid, time).name
-    :timer.sleep(500)
+    # :timer.sleep(50)
+    # # time = Ecto.DateTime.utc(:usec)
+    #
+    # user
+    # |> UserCommandHandler.change_name("Hola 6")
+    # |> UserCommandHandler.change_name("Hola 8")
+    #
+    # :timer.sleep(500)
+    # IO.inspect UserWriteRepository.all
+    # UserWriteRepository.save_all
+    # :timer.sleep(50)
+    # IO.puts UserWriteRepository.find(user.uuid).name
+    # UserCommandHandler.change_name(user, "Hola 9")
+    # :timer.sleep(50)
+    # UserWriteRepository.save user
+    # IO.puts "HOLA"
+    # :timer.sleep(50)
+    # # IO.inspect UserQueryHandler.find user.uuid
+    # :timer.sleep(600)
+    # # IO.puts UserReadRepository.find_at(user.uuid, time).name
+    # :timer.sleep(500)
 
     IO.inspect UserCommandHandler.get_commands
 

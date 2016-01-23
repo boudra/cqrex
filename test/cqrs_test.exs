@@ -51,7 +51,7 @@ defmodule CqrsTest do
 
   end
 
-  test "event sourcing" do
+  test "that it should source the events" do
 
     assert match?(
     {
