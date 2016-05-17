@@ -1,7 +1,7 @@
-defmodule Cqrs do
+defmodule Cqrex do
 
   defmodule Repo do
-    use Ecto.Repo, otp_app: :cqrs
+    use Ecto.Repo, otp_app: :cqrex
   end
 
   defmodule AtomType do
@@ -32,7 +32,7 @@ defmodule Cqrs do
       field :timestamp, Ecto.DateTime
       field :aggregate_uuid, Ecto.UUID
       field :aggregate_type, :string
-      field :type, Cqrs.AtomType
+      field :type, Cqrex.AtomType
       field :payload, :map
     end
 
@@ -43,7 +43,7 @@ defmodule Cqrs do
 
   def make_event(type, aggregate_type, aggregate, payload) do
     %Event{
-      uuid: Cqrs.make_uuid,
+      uuid: Cqrex.make_uuid,
       aggregate_type: aggregate_type,
       aggregate_uuid: aggregate,
       timestamp: Ecto.DateTime.utc(:usec),
@@ -54,13 +54,13 @@ defmodule Cqrs do
 
 end
 
-defmodule Cqrs.MessageHandler do
+defmodule Cqrex.MessageHandler do
 
 
 end
 
-defmodule Cqrs.QueryHandler do
-  import Cqrs.MessageHandler
+defmodule Cqrex.QueryHandler do
+  import Cqrex.MessageHandler
   defmacro query({name, _, args}, expr) do
     quote do
       def handle({unquote(name), unquote_splicing(args) }), unquote(expr)
@@ -69,15 +69,15 @@ defmodule Cqrs.QueryHandler do
   end
   defmacro __using__(_opts) do
     quote do
-      import Cqrs
-      import Cqrs.QueryHandler
+      import Cqrex
+      import Cqrex.QueryHandler
     end
   end
 end
 
-defmodule Cqrs.CommandHandler do
+defmodule Cqrex.CommandHandler do
 
-  import Cqrs.MessageHandler
+  import Cqrex.MessageHandler
   defmacro command({type, _, named_args},  expr) when is_atom(type) and is_list(named_args) do
 
     real_args = [ :self | named_args |> Enum.map(fn(arg) ->
@@ -109,8 +109,8 @@ defmodule Cqrs.CommandHandler do
   defmacro __using__(_opts) do
     Module.put_attribute(__CALLER__.module, :commands, [])
     quote do
-      import Cqrs
-      import Cqrs.CommandHandler
+      import Cqrex
+      import Cqrex.CommandHandler
       use GenServer
 
       def handle_cast({ type, aggregate, message }, state) do
@@ -139,7 +139,7 @@ defmodule Cqrs.CommandHandler do
 
       def publish(model, event_type, payload) do
         "Elixir." <> name = "#{model.__struct__}"
-        MessageBus.publish(:changes, Cqrs.make_event(
+        MessageBus.publish(:changes, Cqrex.make_event(
           event_type,
           Macro.underscore(name),
           model.uuid,
@@ -156,14 +156,14 @@ defmodule Cqrs.CommandHandler do
   end
 end
 
-defmodule Cqrs.Repository do
+defmodule Cqrex.Repository do
   defmodule State, do: defstruct items: [], changes: [], cache: nil
   defmacro __using__(options) do
 
     model_name = Keyword.get(options, :model)
 
     quote do
-      import Cqrs.Repository
+      import Cqrex.Repository
       import Ecto.Query, only: [from: 2]
       require Ecto.Changeset
 
@@ -188,14 +188,14 @@ defmodule Cqrs.Repository do
         "Elixir." <> name = "#{unquote(model_name)}"
         name = Macro.underscore(name)
 
-        query = from e in Cqrs.Event,
+        query = from e in Cqrex.Event,
           where: e.aggregate_type == ^name,
           where: e.aggregate_uuid == ^uuid,
           where: e.timestamp < ^time,
           order_by: e.timestamp,
           select: e
 
-        events = Cqrs.Repo.all(query)
+        events = Cqrex.Repo.all(query)
 
         model = Enum.reduce(events, new_model(uuid),
           &(unquote(model_name).handle(&2,{&1.type, &1.payload})))
@@ -216,7 +216,7 @@ defmodule Cqrs.Repository do
       defp get_or_create(cache, items, uuid) do
         # IO.inspect items
         case :ets.lookup(cache, uuid) do
-           [] -> db_model = case Cqrs.Repo.get(unquote(model_name), uuid) do
+           [] -> db_model = case Cqrex.Repo.get(unquote(model_name), uuid) do
                 nil -> new_model(uuid)
                 model -> model
             end
@@ -229,7 +229,7 @@ defmodule Cqrs.Repository do
       defp get(cache, uuid) do
         # IO.inspect items
         case :ets.lookup(cache, uuid) do
-          [] -> case Cqrs.Repo.get(unquote(model_name), uuid) do
+          [] -> case Cqrex.Repo.get(unquote(model_name), uuid) do
               nil -> nil
               model -> model
           end
@@ -279,9 +279,9 @@ defmodule Cqrs.Repository do
         rest_changes = state.changes |> Enum.reject(&(&1.aggregate_uuid == model.uuid))
         Enum.each(changes, fn(change) ->
           MessageBus.publish :events, change
-          Cqrs.Repo.insert!(change)
+          Cqrex.Repo.insert!(change)
         end)
-        Cqrs.Repo.insert_or_update!(Enum.find(
+        Cqrex.Repo.insert_or_update!(Enum.find(
           state.items,
           nil,
           &(&1.model.uuid == model.uuid)))
@@ -323,19 +323,19 @@ defmodule Cqrs.Repository do
 
       def new_model(uuid \\ nil) do
         struct(unquote(model_name))
-        |> Map.put(:uuid, (is_nil(uuid) && Cqrs.make_uuid || uuid))
+        |> Map.put(:uuid, (is_nil(uuid) && Cqrex.make_uuid || uuid))
       end
 
     end
   end
 end
 
-defmodule Cqrs.AggregateRoot do
+defmodule Cqrex.AggregateRoot do
 
   defmacro __using__(_opts) do
     quote do
-      import Cqrs
-      import Cqrs.AggregateRoot
+      import Cqrex
+      import Cqrex.AggregateRoot
       use Ecto.Schema
       @primary_key {:uuid, Ecto.UUID, [read_after_writes: true]}
     end

@@ -2,14 +2,14 @@
 # and its dependencies with the aid of the Mix.Config module.
 use Mix.Config
 
-config :cqrs, Cqrs.PostgresRepo,
+config :cqrex, Cqrex.PostgresRepo,
   adapter: Ecto.Adapters.Postgres,
   database: "postgres",
   username: "postgres",
   password: "postgres",
   hostname: "192.168.99.100"
 
-config :cqrs, Cqrs.Repo,
+config :cqrex, Cqrex.Repo,
   adapter: Sqlite.Ecto,
   database: "db.sqlite3"
 

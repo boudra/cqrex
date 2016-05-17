@@ -8,7 +8,7 @@ defmodule Main do
 
     children = [
       worker(MessageBus, []),
-      worker(Cqrs.Repo, []),
+      worker(Cqrex.Repo, []),
       worker(User.CommandHandler, []),
       worker(User.WriteRepository, []),
       worker(User.ReadRepository, [])
@@ -62,16 +62,16 @@ defmodule Main do
 end
 
 defmodule User.WriteRepository do
-  use Cqrs.Repository, model: User
+  use Cqrex.Repository, model: User
 end
 
 defmodule User.ReadRepository do
-  use Cqrs.Repository, model: User
+  use Cqrex.Repository, model: User
 end
 
 defmodule User do
 
-  use Cqrs.AggregateRoot
+  use Cqrex.AggregateRoot
 
   schema "users" do
     field :name, :string
@@ -90,7 +90,7 @@ end
 defmodule User.CommandHandler do
 
   @repo User.WriteRepository
-  use Cqrs.CommandHandler
+  use Cqrex.CommandHandler
 
   # Commands
 
@@ -111,7 +111,7 @@ end
 defmodule User.QueryHandler do
 
   @repo User.ReadRepository
-  use Cqrs.QueryHandler
+  use Cqrex.QueryHandler
 
   # Queries
 
