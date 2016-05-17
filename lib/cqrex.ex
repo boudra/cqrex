@@ -1,5 +1,7 @@
 defmodule Cqrex do
 
+  use Application
+
   defmodule AtomType do
 
     def type, do: :string
@@ -51,88 +53,18 @@ defmodule Cqrex do
     }
   end
 
-end
 
+  def start(_type, _args) do
 
-defmodule Cqrex.AggregateRoot do
+    import Supervisor.Spec, warn: false
 
-  defprotocol Protocol do
-    def events(aggregate)
-  end
+    children = [
+      worker(Cqrex.MessageBus, []),
+      worker(Cqrex.EventStore, [])
+    ]
 
-  defimpl Protocol, for: Any do
-    defmacro __deriving__(module, struct, _) do
-      Module.put_attribute(module, :struct, Map.put(struct, :__events__, []))
-      :ok
-    end
-    def events(aggregate) do
-      aggregate.__events__
-    end
-  end
-
-  defmacro __before_compile__(_) do
-    quote do
-      def new() do
-        unquote({:%, [], [__CALLER__.module, {:%{}, [], [ __events__: [] ]}]})
-      end
-    end
-  end
-
-  defmacro __using__(_opts) do
-    quote do
-      import Cqrex
-      import Cqrex.AggregateRoot
-
-      @before_compile Cqrex.AggregateRoot
-      @derive [ Protocol ]
-    end
-  end
-
-  def save!(aggregate) do
-    Enum.each(
-      aggregate.__events__,
-      &(Cqrex.MessageBus.publish(:events, &1))
-    )
-    struct(aggregate, %{ __events__: [] })
-  end
-
-  def dispatch(aggregate, event, payload \\ nil ) do
-    aggregate = struct(aggregate, %{
-      __events__: [ Cqrex.make_event(
-        event, aggregate.__struct__, aggregate.id, payload
-        ) | aggregate.__events__ ]
-    })
-    apply_change(aggregate, event, payload)
-  end
-
-  def apply_change(aggregate, event, payload) do
-    apply(aggregate.__struct__, event, [ aggregate, payload ] |> Enum.reject(&is_nil/1))
-  end
-
-end
-
-defmodule Cqrex.EventStore do
-
-  use GenServer
-
-  def handle_cast({ :events, event }, %{ events: events }) do
-    {:noreply, %{ events: [ event | events ] }}
-  end
-
-  def handle_call(:get_events, _from, state) do
-    {:reply, state.events, state}
-  end
-
-  def get_events() do
-    GenServer.call(__MODULE__, :get_events)
-  end
-
-  def start_link do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  def init(_args) do
-    { :ok, %{ events: [] } }
+    opts = [strategy: :one_for_one, name: Main.Supervisor]
+    Supervisor.start_link(children, opts)
   end
 
 end

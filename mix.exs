@@ -20,7 +20,7 @@ defmodule Cqrex.Mixfile do
   # Type "mix help compile.app" for more information
   def application do
     [applications: [:logger],
-      mod: {Main, []}]
+      mod: {Cqrex, []}]
   end
 
   # Dependencies can be Hex packages:
