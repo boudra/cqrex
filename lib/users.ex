@@ -9,26 +9,26 @@ defmodule Main do
     children = [
       worker(MessageBus, []),
       worker(Cqrs.Repo, []),
-      worker(UserCommandHandler, []),
-      worker(UserWriteRepository, []),
-      worker(UserReadRepository, [])
+      worker(User.CommandHandler, []),
+      worker(User.WriteRepository, []),
+      worker(User.ReadRepository, [])
     ]
 
     opts = [strategy: :one_for_one, name: Main.Supervisor]
     res = Supervisor.start_link(children, opts)
 
-    MessageBus.subscribe(UserWriteRepository, [ :events, :changes ])
-    MessageBus.subscribe(UserReadRepository,  :events)
-    MessageBus.subscribe(UserCommandHandler,  :commands)
+    MessageBus.subscribe(User.WriteRepository, [ :events, :changes ])
+    MessageBus.subscribe(User.ReadRepository,  :events)
+    MessageBus.subscribe(User.CommandHandler,  :commands)
 
-    user = UserWriteRepository.new_model
-    |> UserCommandHandler.create("Hola x")
-    |> UserCommandHandler.change_name("Hola 5")
+    user = User.WriteRepository.new_model
+    |> User.CommandHandler.create("Hola x")
+    |> User.CommandHandler.change_name("Hola 5")
 
     :timer.sleep(900)
     user
-    |> UserCommandHandler.change_name("Hola 6")
-    |> UserWriteRepository.save
+    |> User.CommandHandler.change_name("Hola 6")
+    |> User.WriteRepository.save
     :timer.sleep(1000)
 
     # :timer.sleep(50)
@@ -53,7 +53,7 @@ defmodule Main do
     # # IO.puts UserReadRepository.find_at(user.uuid, time).name
     # :timer.sleep(500)
 
-    IO.inspect UserCommandHandler.get_commands
+    IO.inspect User.CommandHandler.get_commands
 
     res
 
@@ -61,11 +61,11 @@ defmodule Main do
 
 end
 
-defmodule UserWriteRepository do
+defmodule User.WriteRepository do
   use Cqrs.Repository, model: User
 end
 
-defmodule UserReadRepository do
+defmodule User.ReadRepository do
   use Cqrs.Repository, model: User
 end
 
@@ -87,9 +87,9 @@ defmodule User do
 
 end
 
-defmodule UserCommandHandler do
+defmodule User.CommandHandler do
 
-  @repo UserWriteRepository
+  @repo User.WriteRepository
   use Cqrs.CommandHandler
 
   # Commands
@@ -108,9 +108,9 @@ defmodule UserCommandHandler do
 
 end
 
-defmodule UserQueryHandler do
+defmodule User.QueryHandler do
 
-  @repo UserReadRepository
+  @repo User.ReadRepository
   use Cqrs.QueryHandler
 
   # Queries
