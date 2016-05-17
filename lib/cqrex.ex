@@ -119,6 +119,14 @@ defmodule Cqrex.EventStore do
     {:noreply, %{ events: [ event | events ] }}
   end
 
+  def handle_call(:get_events, _from, state) do
+    {:reply, state.events, state}
+  end
+
+  def get_events() do
+    GenServer.call(__MODULE__, :get_events)
+  end
+
   def start_link do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
