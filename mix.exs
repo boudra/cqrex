@@ -43,4 +43,23 @@ defmodule Cqrex.Mixfile do
       {:cowboy, "~> 1.0"}
     ]
   end
+
+  defp description do
+    """
+    A CQRS implementation in Elixir
+    """
+  end
+
+  defp package do
+    [
+      name: :cqrex,
+      files: ["lib", "priv", "mix.exs", "README*", "readme*", "LICENSE*", "license*"],
+      maintainers: ["Mohamed Boudra"],
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => "https://github.com/thebookofeveryone/cqrex",
+      }
+    ]
+  end
+
 end
