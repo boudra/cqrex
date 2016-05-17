@@ -1,4 +1,4 @@
-defmodule MessageBus do
+defmodule Cqrex.MessageBus do
 
   def start_link, do:
     GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
